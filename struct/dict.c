@@ -52,10 +52,17 @@
  * for Redis, as we use copy-on-write and don't want to move too much memory
  * around when there is a child performing saving operations.
  *
+ * 通过dictEnableResize()和dictDisableResize()函数，我们可以手动进行运行或者
+ * 禁止rehash操作。这样可以更好的配合copy-on-write机制的使用。
  * Note that even when dict_can_resize is set to 0, not all resizes are
  * prevented: a hash table is still allowed to grow if the ratio between
- * the number of elements and the buckets > dict_force_resize_ratio. */
+ * the number of elements and the buckets > dict_force_resize_ratio. 
+ * 如果已经设置disable，关闭了rehash，但是如果hash表的负载因子大于
+ * dict_force_resize_ratio,则还是会强制rehash。
+ * */
+//指示字典是否使用rehash标志
 static int dict_can_resize = 1;
+//负载因子的最大值
 static unsigned int dict_force_resize_ratio = 5;
 
 /* -------------------------- private prototypes ---------------------------- */
@@ -68,6 +75,8 @@ static int _dictInit(dict *ht, dictType *type, void *privDataPtr);
 /* -------------------------- hash functions -------------------------------- */
 
 /* Thomas Wang's 32 bit Mix Function */
+//哈希函数初始化
+//输入无符号整型，输出无符号整型
 unsigned int dictIntHashFunction(unsigned int key)
 {
     key += ~(key << 15);
@@ -79,6 +88,7 @@ unsigned int dictIntHashFunction(unsigned int key)
     return key;
 }
 
+//哈希种子
 static uint32_t dict_hash_function_seed = 5381;
 
 void dictSetHashFunctionSeed(uint32_t seed) {
@@ -100,6 +110,9 @@ uint32_t dictGetHashFunctionSeed(void) {
  * 2. It will not produce the same results on little-endian and big-endian
  *    machines.
  */
+//哈希函数的计算
+//输入，void* 键值   len长度
+//返回无符号整型
 unsigned int dictGenHashFunction(const void *key, int len) {
     /* 'm' and 'r' are mixing constants generated offline.
      They're not really 'magic', they just happen to work well.  */
@@ -156,30 +169,51 @@ unsigned int dictGenCaseHashFunction(const unsigned char *buf, int len) {
 
 /* Reset a hash table already initialized with ht_init().
  * NOTE: This function should only be called by ht_destroy(). */
+/*ht：哈希表
+ *重置一个已经被初始化后的哈希表
+ *这个函数只能被调用由ht_destroy()函数
+ */
 static void _dictReset(dictht *ht)
 {
+	//哈希实例归为NULL
     ht->table = NULL;
+    //属性都置为0
     ht->size = 0;
     ht->sizemask = 0;
     ht->used = 0;
 }
 
 /* Create a new hash table */
+/*type:哈希操作集
+ *privDataPtr：
+ *返回一个字典指针
+ *创建一个字典
+ */
 dict *dictCreate(dictType *type,
         void *privDataPtr)
 {
+	//分配空间
     dict *d = zmalloc(sizeof(*d));
-
+	//初始化
     _dictInit(d,type,privDataPtr);
     return d;
 }
 
 /* Initialize the hash table */
+/*d:字典指针
+ *type：字典操作集
+ *privDataPtr：
+ *返回创建成功标志
+ *初始化字典
+ *
+ */
 int _dictInit(dict *d, dictType *type,
         void *privDataPtr)
 {
+	//重置哈希表0 1
     _dictReset(&d->ht[0]);
     _dictReset(&d->ht[1]);
+    //初始化赋值
     d->type = type;
     d->privdata = privDataPtr;
     d->rehashidx = -1;
@@ -189,6 +223,11 @@ int _dictInit(dict *d, dictType *type,
 
 /* Resize the table to the minimal size that contains all the elements,
  * but with the invariant of a USED/BUCKETS ratio near to <= 1 */
+/*d：字典指针
+ *返回
+ *
+ *
+ */
 int dictResize(dict *d)
 {
     int minimal;
