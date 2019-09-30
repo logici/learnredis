@@ -38,41 +38,46 @@
 #ifndef __DICT_H
 #define __DICT_H
 
-#define DICT_OK 0
-#define DICT_ERR 1
+#define DICT_OK 0       //ok成功
+#define DICT_ERR 1      //err错误
 
 /* Unused arguments generate annoying warnings... */
-#define DICT_NOTUSED(V) ((void) V)
+#define DICT_NOTUSED(V) ((void) V)      //把没有使用的参数强制转换为void类型，这样就不会有警告了
 
+//字典集合
 typedef struct dictEntry {
-    void *key;
-    union {
-        void *val;
-        uint64_t u64;
-        int64_t s64;
-        double d;
+    void *key;          //key键值
+    union {             //联合体，以下所有的变量共用一个地址，取最大的地址
+        void *val;      //value值
+        uint64_t u64;   //无符号x64的整型变量
+        int64_t s64;    //有符号x64的整型变量
+        double d;       //double双精度浮点数
     } v;
-    struct dictEntry *next;
+    struct dictEntry *next;//指向dictEntry的指针
 } dictEntry;
 
+//字典类型
+//封装了一些字典操作的函数
 typedef struct dictType {
-    unsigned int (*hashFunction)(const void *key);
-    void *(*keyDup)(void *privdata, const void *key);
-    void *(*valDup)(void *privdata, const void *obj);
-    int (*keyCompare)(void *privdata, const void *key1, const void *key2);
-    void (*keyDestructor)(void *privdata, void *key);
-    void (*valDestructor)(void *privdata, void *obj);
+    unsigned int (*hashFunction)(const void *key);      //函数指针，哈希函数，根据key来计算value
+    void *(*keyDup)(void *privdata, const void *key);   //复制key的方法？
+    void *(*valDup)(void *privdata, const void *obj);   //复制val的方法？
+    int (*keyCompare)(void *privdata, const void *key1, const void *key2);  //key值比较方法
+    void (*keyDestructor)(void *privdata, void *key);       //key的析构函数
+    void (*valDestructor)(void *privdata, void *obj);       //val的析构函数
 } dictType;
 
 /* This is our hash table structure. Every dictionary has two of this as we
  * implement incremental rehashing, for the old to the new table. */
+//哈希表结构体
 typedef struct dictht {
-    dictEntry **table;
-    unsigned long size;
-    unsigned long sizemask;
-    unsigned long used;
+    dictEntry **table;  //？？
+    unsigned long size;     //表格可容纳字典数量
+    unsigned long sizemask; 
+    unsigned long used;     //正在被使用的字典数量
 } dictht;
 
+//字典主操作类
 typedef struct dict {
     dictType *type;
     void *privdata;
