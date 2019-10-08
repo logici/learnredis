@@ -90,28 +90,44 @@
  *
  * |00pppppp| - 1 byte
  *      String value with length less than or equal to 63 bytes (6 bits).
+ *      字符串的长度小于或者等于63字节
  * |01pppppp|qqqqqqqq| - 2 bytes
  *      String value with length less than or equal to 16383 bytes (14 bits).
+ *      字符串的长度小于或者等于16383字节
  * |10______|qqqqqqqq|rrrrrrrr|ssssssss|tttttttt| - 5 bytes
  *      String value with length greater than or equal to 16384 bytes.
+ *      字符串的长度大于获得弄个16384字节
+ *
+ * 2）如果节点保存的是整数值，那么这部分header的头两位都将被设置为1，
+ *    而之后跟着的两位则用于表示节点所保存的整数的类型。
+ *
  * |11000000| - 1 byte
  *      Integer encoded as int16_t (2 bytes).
+ *      节点的值为int16_t类型的整数，长度为2字节
  * |11010000| - 1 byte
  *      Integer encoded as int32_t (4 bytes).
+ *      节点的值为int32_t类型的整数，长度为4字节
  * |11100000| - 1 byte
  *      Integer encoded as int64_t (8 bytes).
+ *      节点的值为int64_t类型的整数，长度为8字节
  * |11110000| - 1 byte
  *      Integer encoded as 24 bit signed (3 bytes).
+ *      节点的值为24位长的整数
  * |11111110| - 1 byte
  *      Integer encoded as 8 bit signed (1 byte).
+ *      节点的值为8位长的整数
  * |1111xxxx| - (with xxxx between 0000 and 1101) immediate 4 bit integer.
  *      Unsigned integer from 0 to 12. The encoded value is actually from
  *      1 to 13 because 0000 and 1111 can not be used, so 1 should be
  *      subtracted from the encoded 4 bit value to obtain the right value.
+ *      节点的值为介于0-12之间的无符号整数。
+ *      因为0000和1111都不能使用，所以位的实际值将是1-13？？？1-14？？？
+ *      程序在取得这4个位的值之后，还需要减去1，才能计算出正确的值。
+ *      比如说，如果位的值为0001 = 1，那么程序返回的值将是 1 - 1 = 0.
  * |11111111| - End of ziplist.
- *
+ *      ziplist的结尾标识
  * All the integers are represented in little endian byte order.
- *
+ * 所有整数都标识为小端字节序。
  * ----------------------------------------------------------------------------
  *
  * Copyright (c) 2009-2012, Pieter Noordhuis <pcnoordhuis at gmail dot com>
@@ -154,21 +170,38 @@
 #include "endianconv.h"
 #include "redisassert.h"
 
+/*
+ *ziplist末端标识符，以及5字节长长度标识符
+ */
+
 #define ZIP_END 255
 #define ZIP_BIGLEN 254
 
 /* Different encoding/length possibilities */
+/*
+ *字符串编码和整数编码的掩码
+ *
+ */
 #define ZIP_STR_MASK 0xc0
 #define ZIP_INT_MASK 0x30
+/*
+ *字符串编码类型
+ *
+ */
 #define ZIP_STR_06B (0 << 6)
 #define ZIP_STR_14B (1 << 6)
 #define ZIP_STR_32B (2 << 6)
+/*
+ *整数编码类型
+ */
 #define ZIP_INT_16B (0xc0 | 0<<4)
 #define ZIP_INT_32B (0xc0 | 1<<4)
 #define ZIP_INT_64B (0xc0 | 2<<4)
 #define ZIP_INT_24B (0xc0 | 3<<4)
 #define ZIP_INT_8B 0xfe
-/* 4 bit integer immediate encoding */
+/* 4 bit integer immediate encoding
+ * 4位整数编码的掩码和类型
+ *  */
 #define ZIP_INT_IMM_MASK 0x0f
 #define ZIP_INT_IMM_MIN 0xf1    /* 11110001 */
 #define ZIP_INT_IMM_MAX 0xfd    /* 11111101 */
