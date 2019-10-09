@@ -207,44 +207,84 @@
 #define ZIP_INT_IMM_MAX 0xfd    /* 11111101 */
 #define ZIP_INT_IMM_VAL(v) (v & ZIP_INT_IMM_MASK)
 
+/*
+ *24位的最大最小值
+ */
 #define INT24_MAX 0x7fffff
 #define INT24_MIN (-INT24_MAX - 1)
 
 /* Macro to determine type */
+//判断是否是字符串编码
 #define ZIP_IS_STR(enc) (((enc) & ZIP_STR_MASK) < ZIP_STR_MASK)
 
 /* Utility macros */
+//定位到ziplist的bytes属性，该属性记录了整个ziplist所占用的内存字节数
+//用于取出byte属性的现有值，或者为bytes属性赋予新值
 #define ZIPLIST_BYTES(zl)       (*((uint32_t*)(zl)))
+//定位到ziplist的offset属性，该属性记录了到达表尾节点的偏移量
+//用于取出offset属性的现有值，或者为offset属性赋予新值
 #define ZIPLIST_TAIL_OFFSET(zl) (*((uint32_t*)((zl)+sizeof(uint32_t))))
+//定位到ziplist的length属性，该属性记录了ziplist包含的节点数量
+//用于取出length属性的现有值，或者为length属性赋予新值
 #define ZIPLIST_LENGTH(zl)      (*((uint16_t*)((zl)+sizeof(uint32_t)*2)))
+//返回ziplist表头的大小，包含了zlBytes,zltail,zllen
 #define ZIPLIST_HEADER_SIZE     (sizeof(uint32_t)*2+sizeof(uint16_t))
+//返回指向ziplist第一个节点（的起始位置）的指针
 #define ZIPLIST_ENTRY_HEAD(zl)  ((zl)+ZIPLIST_HEADER_SIZE)
+//返回指向ziplist最后一个节点的指针，小端序
 #define ZIPLIST_ENTRY_TAIL(zl)  ((zl)+intrev32ifbe(ZIPLIST_TAIL_OFFSET(zl)))
+//返回指向ziplist末端zip_end的指针
 #define ZIPLIST_ENTRY_END(zl)   ((zl)+intrev32ifbe(ZIPLIST_BYTES(zl))-1)
 
 /* We know a positive increment can only be 1 because entries can only be
  * pushed one at a time. */
+ /*
+  *增加ziplist的节点数
+  *
+  *T = O（1）
+  */
 #define ZIPLIST_INCR_LENGTH(zl,incr) { \
     if (ZIPLIST_LENGTH(zl) < UINT16_MAX) \
         ZIPLIST_LENGTH(zl) = intrev16ifbe(intrev16ifbe(ZIPLIST_LENGTH(zl))+incr); \
 }
 
+/*
+ *
+ *保存ziplist节点信息的结构
+ *
+ */
 typedef struct zlentry {
+    //prevrawlensize:编码prevrawlen所需的字节大小
+    //prevrawlen:前向节点的长度
     unsigned int prevrawlensize, prevrawlen;
+    //len：当前节点值的长度
+    //lensize：编码len所需的字节大小
     unsigned int lensize, len;
+    //当前节点header的大小
+    //等于prevrawlensize+lensize
     unsigned int headersize;
+    //当前节点值所使用的编码类型
     unsigned char encoding;
+    //指向存储值的指针
     unsigned char *p;
 } zlentry;
 
 /* Extract the encoding from the byte pointed by 'ptr' and set it into
- * 'encoding'. */
+ * 'encoding'.
+ *从ptr中取出节点值的编码类型，并将它保存到encoding变量中
+
+ T = O（1）
+ * */
 #define ZIP_ENTRY_ENCODING(ptr, encoding) do {  \
     (encoding) = (ptr[0]); \
     if ((encoding) < ZIP_STR_MASK) (encoding) &= ZIP_STR_MASK; \
 } while(0)
 
-/* Return bytes needed to store integer encoded by 'encoding' */
+/* Return bytes needed to store integer encoded by 'encoding'
+ * 返回保存encoding编码的值所需的字节数量
+ *
+ * T = O（1）
+ * */
 static unsigned int zipIntSize(unsigned char encoding) {
     switch(encoding) {
     case ZIP_INT_8B:  return 1;
@@ -259,10 +299,16 @@ static unsigned int zipIntSize(unsigned char encoding) {
 }
 
 /* Encode the length 'rawlen' writing it in 'p'. If p is NULL it just returns
- * the amount of bytes required to encode such a length. */
+ * the amount of bytes required to encode such a length.
+ * 编码节点长度值l，并将它写入到p中，然后返回编码l所需的字节数量。
+ * 如果p为NULL，那么仅返回编码l所需的字节数量，不进行写入
+ * T = O（1）
+ *
+ * */
 static unsigned int zipEncodeLength(unsigned char *p, unsigned char encoding, unsigned int rawlen) {
     unsigned char len = 1, buf[5];
 
+    //编码字符串
     if (ZIP_IS_STR(encoding)) {
         /* Although encoding is given it may not be set for strings,
          * so we determine it here using the raw length. */
@@ -283,6 +329,7 @@ static unsigned int zipEncodeLength(unsigned char *p, unsigned char encoding, un
             buf[3] = (rawlen >> 8) & 0xff;
             buf[4] = rawlen & 0xff;
         }
+        //编码整数
     } else {
         /* Implies integer encoding, so length is always 1. */
         if (!p) return len;
@@ -290,7 +337,10 @@ static unsigned int zipEncodeLength(unsigned char *p, unsigned char encoding, un
     }
 
     /* Store this length at p */
+    //将编码后的长度写入p
     memcpy(p,buf,len);
+
+    //返回编码所需的字节数
     return len;
 }
 
