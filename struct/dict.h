@@ -196,7 +196,7 @@ typedef void (dictScanFunction)(void *privdata, const dictEntry *de);
 #define dictSlots(d) ((d)->ht[0].size+(d)->ht[1].size)
 //获取dict中dictht的总的已被使用大小
 #define dictSize(d) ((d)->ht[0].used+(d)->ht[1].used)
-//获取dict有无被重定位过
+//获取dict有无被重hash
 #define dictIsRehashing(d) ((d)->rehashidx != -1)
 
 /* API */

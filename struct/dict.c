@@ -224,46 +224,67 @@ int _dictInit(dict *d, dictType *type,
 /* Resize the table to the minimal size that contains all the elements,
  * but with the invariant of a USED/BUCKETS ratio near to <= 1 */
 /*d：字典指针
- *返回
- *
+ *返回 成功 或者 err
+ *底层使用expand函数
  *
  */
 int dictResize(dict *d)
 {
     int minimal;
 
+    //如果dict_can_resize不置1，或者rehashidx不为-1时，
+    //进入if函数，返回err，不能重置大小
     if (!dict_can_resize || dictIsRehashing(d)) return DICT_ERR;
+
     minimal = d->ht[0].used;
+    //DICT_HT_INITIAL_SIZE表示初始化哈希表的数
+    //目，该宏为4
     if (minimal < DICT_HT_INITIAL_SIZE)
         minimal = DICT_HT_INITIAL_SIZE;
     return dictExpand(d, minimal);
 }
 
 /* Expand or create the hash table */
+/*d：字典
+ *size：大小
+ *返回
+ *扩展hash或者创建hash表，如果ht[0]为空，则是一次创建
+ *
+ */
 int dictExpand(dict *d, unsigned long size)
 {
+
     dictht n; /* the new hash table */
+    //计算rehash的hash表的大小
+    //计算方式：第一个大于size（ht[0]已使用的长度）的2的n次幂
     unsigned long realsize = _dictNextPower(size);
 
     /* the size is invalid if it is smaller than the number of
      * elements already inside the hash table */
+
+    //rehashidx!=-1
+    // 或者 size不能小于ht[0]已使用的值？？？为什么不能小？
     if (dictIsRehashing(d) || d->ht[0].used > size)
         return DICT_ERR;
 
     /* Allocate the new hash table and initialize all pointers to NULL */
+    //初始化新的hash表
     n.size = realsize;
     n.sizemask = realsize-1;
-    n.table = zcalloc(realsize*sizeof(dictEntry*));
+    n.table = zcalloc(realsize*sizeof(dictEntry*));//分配指针数组的空间
     n.used = 0;
 
     /* Is this the first initialization? If so it's not really a rehashing
      * we just set the first hash table so that it can accept keys. */
+    //如果ht[0]为空，则说明这是一次创建并初始化字典
     if (d->ht[0].table == NULL) {
         d->ht[0] = n;
         return DICT_OK;
     }
 
     /* Prepare a second hash table for incremental rehashing */
+    //完成ht[1]的初始化
+    //把rehashidx置0，方便后续的迁移工作
     d->ht[1] = n;
     d->rehashidx = 0;
     return DICT_OK;
@@ -273,13 +294,26 @@ int dictExpand(dict *d, unsigned long size)
  * keys to move from the old to the new hash table, otherwise 0 is returned.
  * Note that a rehashing step consists in moving a bucket (that may have more
  * than one key as we use chaining) from the old to the new hash table. */
+/*执行N步渐进式rehash
+ *返回1表示仍有key需要从ht[0]迁移到ht[1]
+ *返回0则表示已经迁移完成
+ *注意，每步rehash都是以一个哈希表索引（桶）作为单位
+ *一个桶可以有多个节点
+ *被rehash的桶里的所有节点都被迁移到新的表里
+ *
+ *d:字典
+ *n：
+ *
+ */
 int dictRehash(dict *d, int n) {
+    //当rehashidx！=-1时，跳出if
     if (!dictIsRehashing(d)) return 0;
 
     while(n--) {
         dictEntry *de, *nextde;
 
         /* Check if we already rehashed the whole table... */
+        //已经迁移完毕，所需做的后续步骤
         if (d->ht[0].used == 0) {
             zfree(d->ht[0].table);
             d->ht[0] = d->ht[1];
@@ -290,15 +324,26 @@ int dictRehash(dict *d, int n) {
 
         /* Note that rehashidx can't overflow as we are sure there are more
          * elements because ht[0].used != 0 */
+        //rehashidx不能大于size
+        //在rehash模式下，reshaidx作为正在迁移的索引值
         assert(d->ht[0].size > (unsigned long)d->rehashidx);
+        //寻找到非空的节点进行赋值
         while(d->ht[0].table[d->rehashidx] == NULL) d->rehashidx++;
         de = d->ht[0].table[d->rehashidx];
         /* Move all the keys in this bucket from the old to the new hash HT */
+        //迁移该key下的所有节点
+        //因为使用的是链地址法解决hash冲突问题
+        //所以一个key上回有多个节点
         while(de) {
             unsigned int h;
 
             nextde = de->next;
             /* Get the index in the new hash table */
+            //重新计算hash函数
+            //&上掩码得出新表的排位
+            //好像它这个没有做链表的处理？
+            //如果重新计算出来的h有相等的情况出现
+            //也就是冲突，他没有链接的处理
             h = dictHashKey(d, de->key) & d->ht[1].sizemask;
             de->next = d->ht[1].table[h];
             d->ht[1].table[h] = de;
@@ -306,12 +351,17 @@ int dictRehash(dict *d, int n) {
             d->ht[1].used++;
             de = nextde;
         }
+        //旧表迁移走的置空
         d->ht[0].table[d->rehashidx] = NULL;
+        //到下一个rehashidx
         d->rehashidx++;
     }
     return 1;
 }
-
+/*
+ *返回以毫秒为单位的时间戳
+ *
+ */
 long long timeInMilliseconds(void) {
     struct timeval tv;
 
@@ -320,6 +370,9 @@ long long timeInMilliseconds(void) {
 }
 
 /* Rehash for an amount of time between ms milliseconds and ms+1 milliseconds */
+/*在给定时间内（ms），以100步为单位，对dict进行rehash
+ *
+ */
 int dictRehashMilliseconds(dict *d, int ms) {
     long long start = timeInMilliseconds();
     int rehashes = 0;
@@ -336,14 +389,32 @@ int dictRehashMilliseconds(dict *d, int ms) {
  * middle of a rehashing we can't mess with the two hash tables otherwise
  * some element can be missed or duplicated.
  *
+ * 如果字典不存在安全迭代器的情况下，对字典进行单步rehash
+ * 字典有安全迭代器的情况下不能进行rehash
+ * 因为两种不同的迭代和修改可能会弄乱字典
+ *
  * This function is called by common lookup or update operations in the
  * dictionary so that the hash table automatically migrates from H1 to H2
- * while it is actively used. */
+ * while it is actively used. 
+ *
+ * 这个函数被多个通用的查找、更新操作调用
+ * 它可以在字典被调用的同时进行rehash
+ *
+ * */
+//如果安全迭代器==0，则进行单步的rehash
 static void _dictRehashStep(dict *d) {
     if (d->iterators == 0) dictRehash(d,1);
 }
 
+
 /* Add an element to the target hash table */
+/*d：字典
+ *key：键
+ *val：值
+ *返回成功或err
+ *添加节点到字典
+ *
+ */
 int dictAdd(dict *d, void *key, void *val)
 {
     dictEntry *entry = dictAddRaw(d,key);
@@ -367,6 +438,11 @@ int dictAdd(dict *d, void *key, void *val)
  *
  * If key already exists NULL is returned.
  * If key was added, the hash entry is returned to be manipulated by the caller.
+ *
+ * 尝试将键插入到字典中
+ * 如果键已经存在字典中则返回NULL
+ * 如果键不存在，那么程序将创建新的哈希节点
+ * 将节点和键值关联，并插入到字典中，返回节点本身
  */
 dictEntry *dictAddRaw(dict *d, void *key)
 {
@@ -374,6 +450,7 @@ dictEntry *dictAddRaw(dict *d, void *key)
     dictEntry *entry;
     dictht *ht;
 
+    //如果正在进行rehash模式，进行一次单步rehash
     if (dictIsRehashing(d)) _dictRehashStep(d);
 
     /* Get the index of the new element, or -1 if
@@ -874,6 +951,7 @@ static int _dictExpandIfNeeded(dict *d)
 }
 
 /* Our hash table capability is a power of two */
+//计算第一个大于size的（2的N次方的数)，用作哈希表的值
 static unsigned long _dictNextPower(unsigned long size)
 {
     unsigned long i = DICT_HT_INITIAL_SIZE;
