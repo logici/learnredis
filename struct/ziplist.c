@@ -1377,21 +1377,32 @@ unsigned int ziplistCompare(unsigned char *p, unsigned char *sstr, unsigned int 
     zlentry entry;
     unsigned char sencoding;
     long long zval, sval;
+    //表明是一个空列表
     if (p[0] == ZIP_END) return 0;
 
+    //非空，提取p所指的节点
     entry = zipEntry(p);
+    //字符串编码
     if (ZIP_IS_STR(entry.encoding)) {
+
         /* Raw compare */
+        //长度对比
         if (entry.len == slen) {
+            //内容对比
             return memcmp(p+entry.headersize,sstr,slen) == 0;
         } else {
             return 0;
         }
-    } else {
+    }
+    // 整数编码
+    else {
         /* Try to compare encoded values. Don't compare encoding because
          * different implementations may encoded integers differently. */
+        // sstr字符串转换为整数
         if (zipTryEncoding(sstr,slen,&sval,&sencoding)) {
+            //获取整数
           zval = zipLoadInteger(p+entry.headersize,entry.encoding);
+          //对比
           return zval == sval;
         }
     }
@@ -1399,12 +1410,21 @@ unsigned int ziplistCompare(unsigned char *p, unsigned char *sstr, unsigned int 
 }
 
 /* Find pointer to the entry equal to the specified entry. Skip 'skip' entries
- * between every comparison. Returns NULL when the field could not be found. */
+ * between every comparison. Returns NULL when the field could not be found.
+ * 
+ * 寻找节点值和vstr相等的列表节点，并返回该节点的指针。
+ * 每次对比之前都跳过skip个节点
+ * 如果找不到相应的节点，则返回NULL
+ *
+ * T = O（N^2）
+ *
+ * */
 unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int vlen, unsigned int skip) {
     int skipcnt = 0;
     unsigned char vencoding = 0;
     long long vll = 0;
 
+    //迭代到表尾
     while (p[0] != ZIP_END) {
         unsigned int prevlensize, encoding, lensize, len;
         unsigned char *q;
@@ -1415,6 +1435,7 @@ unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int v
 
         if (skipcnt == 0) {
             /* Compare current entry with specified entry */
+            // 对比字符串值
             if (ZIP_IS_STR(encoding)) {
                 if (len == vlen && memcmp(q, vstr, vlen) == 0) {
                     return p;
@@ -1423,6 +1444,9 @@ unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int v
                 /* Find out if the searched field can be encoded. Note that
                  * we do it only the first time, once done vencoding is set
                  * to non-zero and vll is set to the integer value. */
+                // 因为传入值有可能被编码了，
+                // 所以当第一次进行值对比时，程序会对传入值进行解码
+                // 这个解码操作只会进行一次
                 if (vencoding == 0) {
                     if (!zipTryEncoding(vstr, vlen, &vll, &vencoding)) {
                         /* If the entry can't be encoded we set it to
@@ -1437,6 +1461,7 @@ unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int v
                 /* Compare current entry with specified entry, do it only
                  * if vencoding != UCHAR_MAX because if there is no encoding
                  * possible for the field it can't be a valid integer. */
+                // 对比整数
                 if (vencoding != UCHAR_MAX) {
                     long long ll = zipLoadInteger(q, encoding);
                     if (ll == vll) {
@@ -1453,6 +1478,7 @@ unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int v
         }
 
         /* Move to next entry */
+        //后移指针，指向后向节点
         p = q + len;
     }
 
