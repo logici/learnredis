@@ -1486,28 +1486,40 @@ unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int v
 }
 
 /* Return length of ziplist. */
+//返回ziplist 的节点个数
 unsigned int ziplistLen(unsigned char *zl) {
     unsigned int len = 0;
+
+    //节点数小于uint16_max
     if (intrev16ifbe(ZIPLIST_LENGTH(zl)) < UINT16_MAX) {
         len = intrev16ifbe(ZIPLIST_LENGTH(zl));
+
+        //大于时，需要数
     } else {
         unsigned char *p = zl+ZIPLIST_HEADER_SIZE;
         while (*p != ZIP_END) {
             p += zipRawEntryLength(p);
             len++;
         }
-
+        
+        //为啥它又判断一次？？
         /* Re-store length if small enough */
         if (len < UINT16_MAX) ZIPLIST_LENGTH(zl) = intrev16ifbe(len);
     }
     return len;
 }
 
-/* Return ziplist blob size in bytes. */
+/* Return ziplist blob size in bytes.
+ * 
+ * 返回整个ziplist占用的内存字节数
+ *
+ * */
 size_t ziplistBlobLen(unsigned char *zl) {
     return intrev32ifbe(ZIPLIST_BYTES(zl));
 }
 
+
+//打印ziplist 的信息
 void ziplistRepr(unsigned char *zl) {
     unsigned char *p;
     int index = 0;
