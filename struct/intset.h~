@@ -33,18 +33,14 @@
 #include <stdint.h>
 
 typedef struct intset {
-    uint32_t encoding;      //编码方式
-    uint32_t length;        //集合长度
-    int8_t contents[];      //存储的内容
+    uint32_t encoding;
+    uint32_t length;
+    int8_t contents[];
 } intset;
 
-//新建一个intset
 intset *intsetNew(void);
-// 添加数据
 intset *intsetAdd(intset *is, int64_t value, uint8_t *success);
-// 删除数据
 intset *intsetRemove(intset *is, int64_t value, int *success);
-// 查找某个值
 uint8_t intsetFind(intset *is, int64_t value);
 int64_t intsetRandom(intset *is);
 uint8_t intsetGet(intset *is, uint32_t pos, int64_t *value);
