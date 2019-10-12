@@ -1038,37 +1038,53 @@ unsigned long dictScan(dict *d,
                        dictScanFunction *fn,
                        void *privdata)
 {
+    // 哈希表t0  t1
     dictht *t0, *t1;
+    // 节点
     const dictEntry *de;
     unsigned long m0, m1;
 
+    //字典的长度，
+    //如果长度是0，则表示是没有哈希表的字典
     if (dictSize(d) == 0) return 0;
 
+    //如果不处于rehash的状态
     if (!dictIsRehashing(d)) {
+        //取ht0的地址给t0
         t0 = &(d->ht[0]);
+        //取t0的掩码
         m0 = t0->sizemask;
 
         /* Emit entries at cursor */
+        // v按位与 m0掩码读取哈希表中的节点
         de = t0->table[v & m0];
+        //哈希链表
         while (de) {
             fn(privdata, de);
             de = de->next;
         }
 
+        //迭代有两个哈希表的字典
     } else {
+
+        // 指向两个哈希表
         t0 = &d->ht[0];
         t1 = &d->ht[1];
 
         /* Make sure t0 is the smaller and t1 is the bigger table */
+        // 确保t0 比 t1 要小
+        // 如果不满足则把他们交换
         if (t0->size > t1->size) {
             t0 = &d->ht[1];
             t1 = &d->ht[0];
         }
 
+        // 记录掩码
         m0 = t0->sizemask;
         m1 = t1->sizemask;
 
         /* Emit entries at cursor */
+        // 指向桶，并迭代桶中的所有节点
         de = t0->table[v & m0];
         while (de) {
             fn(privdata, de);
@@ -1077,8 +1093,11 @@ unsigned long dictScan(dict *d,
 
         /* Iterate over indices in larger table that are the expansion
          * of the index pointed to by the cursor in the smaller table */
+        // 迭代大表中的桶
+        // 这些桶被索引的expansion所指向
         do {
             /* Emit entries at cursor */
+            // 指向桶，并迭代桶中的所有节点
             de = t1->table[v & m1];
             while (de) {
                 fn(privdata, de);
@@ -1106,23 +1125,40 @@ unsigned long dictScan(dict *d,
 
 /* ------------------------- private functions ------------------------------ */
 
-/* Expand the hash table if needed */
+/* Expand the hash table if needed
+ *
+ * 根据需要，初始化字典（的哈希表），或者对字典（的现有哈希表）进行扩展
+ *
+ * T = O（N）
+ *
+ *
+ * */
 static int _dictExpandIfNeeded(dict *d)
 {
     /* Incremental rehashing already in progress. Return. */
+    //如果已经处于rehash状态了，那就不用进行是否扩展的判断了
     if (dictIsRehashing(d)) return DICT_OK;
 
     /* If the hash table is empty expand it to the initial size. */
+    //如果这是一个空的字典，则扩展两个哈希表给它
     if (d->ht[0].size == 0) return dictExpand(d, DICT_HT_INITIAL_SIZE);
 
     /* If we reached the 1:1 ratio, and we are allowed to resize the hash
      * table (global setting) or we should avoid it but the ratio between
      * elements/buckets is over the "safe" threshold, we resize doubling
-     * the number of buckets. */
+     * the number of buckets.
+     *
+     * 以下两个条件之一为真，则对字典进行扩展：
+     * 1）字典已使用节点数和字典大小之间的比率接近1:1
+     *    并且dict_can_resize为真
+     * 2）已使用节点数和字典大小之间的比率超过dict_force_resize_ratio
+     * 
+     * */
     if (d->ht[0].used >= d->ht[0].size &&
         (dict_can_resize ||
          d->ht[0].used/d->ht[0].size > dict_force_resize_ratio))
     {
+        // 新哈希表的大小至少是目前已使用节点数的两倍
         return dictExpand(d, d->ht[0].used*2);
     }
     return DICT_OK;
@@ -1145,44 +1181,84 @@ static unsigned long _dictNextPower(unsigned long size)
 /* Returns the index of a free slot that can be populated with
  * a hash entry for the given 'key'.
  * If the key already exists, -1 is returned.
+ * 
+ * 返回可以将key插入到哈希表的索引位置
+ * 如果key已经存在于哈希表，那么返回-1
  *
  * Note that if we are in the process of rehashing the hash table, the
- * index is always returned in the context of the second (new) hash table. */
+ * index is always returned in the context of the second (new) hash table.
+ *
+ * 注意，如果字典正在rehash，那么总是返回1号哈希表索引。
+ * 因为在字典进行rehash时，新节点总是插入到1号哈希表
+ *
+ * T = O（N）
+ *
+ * */
 static int _dictKeyIndex(dict *d, const void *key)
 {
     unsigned int h, idx, table;
     dictEntry *he;
 
     /* Expand the hash table if needed */
+    // 判断是否需要扩展，不需要的话则直接退出
     if (_dictExpandIfNeeded(d) == DICT_ERR)
         return -1;
     /* Compute the key hash value */
+    // 计算哈希值
     h = dictHashKey(d, key);
+
     for (table = 0; table <= 1; table++) {
+        //计算索引值
         idx = h & d->ht[table].sizemask;
         /* Search if this slot does not already contain the given key */
+        //查找key是否存在
         he = d->ht[table].table[idx];
         while(he) {
             if (dictCompareKeys(d, key, he->key))
                 return -1;
             he = he->next;
         }
+
+        //运行到这说明已经结束了ht0的所有的节点的遍历，
+        //并且key不在ht0里面
+        //如果处于rehash状态，则进行下一轮遍历
         if (!dictIsRehashing(d)) break;
     }
+    //返回可以加入哈希表的索引
     return idx;
 }
 
+/*
+ *
+ * 清空字典上的所有的哈希节点，并重置字典属性
+ *
+ * T = O（N）
+ *
+ */
 void dictEmpty(dict *d, void(callback)(void*)) {
+    // 删除两个哈希表上的所有节点
+    // T = O（N）
     _dictClear(d,&d->ht[0],callback);
     _dictClear(d,&d->ht[1],callback);
+    // 重置属性
     d->rehashidx = -1;
     d->iterators = 0;
 }
 
+/*
+ * 开启自动rehash
+ * 
+ * T = O(N)
+ */
 void dictEnableResize(void) {
     dict_can_resize = 1;
 }
 
+/*
+ * 关闭自动rehash
+ *
+ * T = O(N)
+ */
 void dictDisableResize(void) {
     dict_can_resize = 0;
 }
